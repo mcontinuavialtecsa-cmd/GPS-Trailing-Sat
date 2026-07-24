@@ -31,6 +31,11 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
 #statsBar{background:#0d1117;border-bottom:1px solid #21262d;padding:5px 16px;display:flex;gap:20px;font-size:11px;color:#8b949e;overflow-x:auto;white-space:nowrap;flex-shrink:0}
 #statsBar span{color:#c9d1d9;font-weight:600;margin-left:3px}
 #statsBar .km-stat span{color:#58a6ff;font-size:12px}
+#statsBar .gps-pct.sin-falta span{color:#22c55e}
+#statsBar .gps-pct.leve span{color:#eab308}
+#statsBar .gps-pct.media span{color:#f97316}
+#statsBar .gps-pct.grave span{color:#ef4444}
+#statsBar .gps-pct.gravisima span{color:#d946ef}
 
 #fileList{display:none!important}
 .file-tag{background:#21262d;border:1px solid #30363d;border-radius:12px;padding:2px 10px;font-size:11px;color:#8b949e;cursor:pointer;transition:all .15s}
@@ -45,7 +50,6 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
 .vehicle-summary-item strong{color:#f0f6fc;font-size:18px;line-height:1.1}
 .vehicle-summary-item.period strong{font-size:14px;color:#58a6ff}
 .route-share-panel{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px 14px}
-#gpsRouteShare{border-width:0 0 1px;border-radius:0;padding:9px 18px;flex-shrink:0}
 .route-share-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:9px}
 .route-share-head h2{font-size:13px;color:#f0f6fc;margin-bottom:2px}
 .route-share-head p{font-size:10px;color:#8b949e}
@@ -233,6 +237,11 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
   <div>Vel. máx: <span id="sMaxSpeed">–</span></div>
   <div>Vel. prom: <span id="sAvgSpeed">–</span></div>
   <div>Detenido: <span id="sStopped">–</span></div>
+  <div class="gps-pct sin-falta">Sin falta: <span id="gpsPctSinFalta">0,0%</span></div>
+  <div class="gps-pct leve">Leve: <span id="gpsPctLeve">0,0%</span></div>
+  <div class="gps-pct media">Media: <span id="gpsPctMedia">0,0%</span></div>
+  <div class="gps-pct grave">Grave: <span id="gpsPctGrave">0,0%</span></div>
+  <div class="gps-pct gravisima">Gravísima: <span id="gpsPctGravisima">0,0%</span></div>
 </div>
 
 <div id="fileList"></div>
@@ -240,17 +249,6 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
   <div class="vehicle-summary-item"><span>Camión</span><strong id="summaryVehicle">–</strong></div>
   <div class="vehicle-summary-item period"><span>Período analizado</span><strong id="sPeriod">–</strong></div>
 </div>
-<section class="route-share-panel" id="gpsRouteShare">
-  <div class="route-share-head">
-    <div>
-      <h2>% del recorrido por categoría de velocidad</h2>
-      <p>Según el vehículo, los días y la condición seleccionados</p>
-    </div>
-    <div class="route-share-total"><span>Recorrido analizado</span><strong id="gpsRouteShareTotal">0,0 km</strong></div>
-  </div>
-  <div class="route-share-bar" id="gpsRouteShareBar"></div>
-  <div class="route-share-grid" id="gpsRouteShareGrid"></div>
-</section>
 <div id="map"></div>
 <div id="tooltip"></div>
 </section>
@@ -618,6 +616,20 @@ function renderRouteShare(prefix,breakdown){
     </div>`).join('');
 }
 
+function renderGpsRoutePercentages(breakdown){
+  const ids={
+    'Sin falta':'gpsPctSinFalta',
+    'Leve':'gpsPctLeve',
+    'Media':'gpsPctMedia',
+    'Grave':'gpsPctGrave',
+    'Gravísima':'gpsPctGravisima'
+  };
+  SPEED_CATEGORY_ORDER.forEach(category=>{
+    document.getElementById(ids[category]).textContent=breakdown.percentages[category]
+      .toLocaleString('es-AR',{minimumFractionDigits:1,maximumFractionDigits:1})+'%';
+  });
+}
+
 // Arrow SVG rotated by heading
 function arrowSVG(color, heading, size){
   const s=size||16;
@@ -895,7 +907,7 @@ function applyFilters(){
     point=>getSpeedCategory(point.speed,point.sourceFile)
   );
   const kmRecorridos=distanceBreakdown.total;
-  renderRouteShare('gpsRouteShare',distanceBreakdown);
+  renderGpsRoutePercentages(distanceBreakdown);
   updateVehicleSummary(dayPts);
 
   // Then apply severity/movement filters just for what's DISPLAYED on the map
