@@ -1855,6 +1855,7 @@ function resetDmsWeights(){
   dmsWeights={types:{},severity:{...DMS_DEFAULT_MULTIPLIERS}};
   ensureDmsTypeWeights();
   saveDmsWeights();
+  renderDmsWeightControls();
   renderDmsReport(false);
 }
 
