@@ -1826,7 +1826,7 @@ function saveDmsWeights(){
 function defaultDmsTypeWeight(type){
   const key=normalizeHeader(type);
   if(/celular|telefono|movil/.test(key))return 5;
-  if(/fumar|cigarrillo|smoking/.test(key))return 3;
+  if(/fumar|fumando|fuma|cigarrillo|smoking/.test(key))return 3;
   if(/distraccion|distraction|fatiga|somnolencia/.test(key))return 3;
   if(/agua|beber|drink/.test(key))return 1;
   return 1;
