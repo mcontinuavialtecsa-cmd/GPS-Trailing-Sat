@@ -178,6 +178,26 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
 .dms-legend-row i{width:9px;height:9px;border-radius:2px}
 .dms-legend-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dms-legend-row b{color:#c9d1d9}
 .dms-alarm-badge{display:inline-block;background:#2d2038;color:#d2a8ff;border:1px solid #6e40c9;border-radius:12px;padding:3px 8px;font-size:10px;font-weight:700}
+.dms-weight-panel{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px}
+.dms-weight-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.dms-weight-head h2{font-size:14px;color:#f0f6fc;margin-bottom:3px}.dms-weight-head p{font-size:10px;color:#8b949e}
+.dms-weight-groups{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.dms-weight-group{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px}
+.dms-weight-group h3{font-size:11px;color:#c9d1d9;margin-bottom:8px;text-transform:uppercase;letter-spacing:.4px}
+.dms-weight-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:7px}
+.dms-weight-item{display:grid;grid-template-columns:minmax(0,1fr) 66px;gap:7px;align-items:center;font-size:10px;color:#8b949e}
+.dms-weight-item span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dms-weight-item input{width:100%;padding:5px 6px}
+.dms-ranking-panel{grid-column:1/-1}.dms-score-fill{height:100%;min-width:2px;background:linear-gradient(90deg,#6e40c9,#d2a8ff);border-radius:4px;transition:width .25s ease}
+.dms-score-row{display:grid;grid-template-columns:minmax(72px,105px) minmax(120px,1fr) 65px;gap:8px;align-items:center}
+.dms-score-detail{grid-column:2/-1;color:#8b949e;font-size:9px;margin-top:-5px;white-space:normal}
+.dms-speed-badge{display:inline-block;border-radius:12px;padding:3px 8px;font-size:10px;font-weight:700}
+.dms-speed-none{background:#30363d;color:#b1bac4}.dms-speed-sin-falta{background:#12351f;color:#56d364;border:1px solid #238636}.dms-condition{color:#8b949e;font-size:10px}
+.dms-map-panel{background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden}
+.dms-map-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 14px;border-bottom:1px solid #30363d}
+.dms-map-head h2{font-size:14px;color:#f0f6fc;margin-bottom:3px}.dms-map-head p,.dms-map-status{font-size:10px;color:#8b949e}
+#dmsMap{height:430px;background:#0d1117}
+.dms-map-legend{display:flex;gap:12px;flex-wrap:wrap;padding:9px 14px;border-top:1px solid #30363d;color:#8b949e;font-size:10px}
+.dms-map-legend span{display:flex;align-items:center;gap:5px}.dms-map-dot{width:9px;height:9px;border-radius:50%;display:inline-block}
 @media(max-width:760px){
   .filter-panel{grid-template-columns:1fr 1fr}.filter-panel .primary-btn{grid-column:1/-1}
   .summary-grid{grid-template-columns:repeat(2,1fr)}.summary-card.total{grid-column:1/-1}
@@ -185,6 +205,8 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
   .route-share-grid{grid-template-columns:repeat(2,1fr)}
   .route-share-card.sin-falta{grid-column:1/-1}
   .dms-donut-layout{grid-template-columns:1fr}
+  .dms-weight-groups{grid-template-columns:1fr}.dms-score-row{grid-template-columns:72px minmax(100px,1fr) 55px}
+  #dmsMap{height:340px}
   .truck-card{grid-template-columns:minmax(0,1fr) auto}.remove-file{grid-column:2}.condition-select{grid-column:2;grid-row:1}
   #vehicleSummary{gap:10px;padding:9px 12px}.vehicle-summary-item{width:100%;justify-content:space-between}
 }
@@ -396,7 +418,7 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
         <p>Analizá alarmas de conducción, combiná filtros y abrí cada evento directamente en el mapa.</p>
       </div>
       <div class="rules-note">
-        Campos reconocidos: <b>camión, tipo de alarma, hora de inicio y posición de inicio</b>.
+        Campos reconocidos: <b>camión, tipo de alarma, hora, posición y velocidad</b>. Si falta velocidad, se busca el GPS más cercano.
       </div>
     </div>
 
@@ -446,6 +468,26 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
       <div class="summary-card"><span>Tipos de falta</span><strong id="dmsCountTypes">0</strong></div>
     </div>
 
+    <section class="dms-weight-panel">
+      <div class="dms-weight-head">
+        <div>
+          <h2>Ponderación de riesgo DMS</h2>
+          <p>Puntaje = peso del tipo de alarma × multiplicador de velocidad. Los cambios quedan guardados en este navegador.</p>
+        </div>
+        <button type="button" onclick="resetDmsWeights()">Restablecer valores</button>
+      </div>
+      <div class="dms-weight-groups">
+        <div class="dms-weight-group">
+          <h3>Peso por tipo de alarma</h3>
+          <div class="dms-weight-grid" id="dmsTypeWeights"><div class="chart-empty">Cargá datos DMS para configurar sus tipos.</div></div>
+        </div>
+        <div class="dms-weight-group">
+          <h3>Multiplicador por velocidad</h3>
+          <div class="dms-weight-grid" id="dmsSeverityWeights"></div>
+        </div>
+      </div>
+    </section>
+
     <div class="charts-grid">
       <section class="chart-panel">
         <div class="chart-head">
@@ -470,6 +512,16 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
           </div>
         </div>
       </section>
+
+      <section class="chart-panel dms-ranking-panel">
+        <div class="chart-head">
+          <div><h2>Ranking ponderado por camión</h2><p>Puntaje, cantidad y desglose por tipo según los filtros activos</p></div>
+          <div class="chart-total"><span>Puntaje total</span><strong id="dmsScoreTotal">0</strong></div>
+        </div>
+        <div class="horizontal-chart" id="dmsScoreChart">
+          <div class="chart-empty">No hay alarmas para mostrar.</div>
+        </div>
+      </section>
     </div>
 
     <section class="report-panel">
@@ -481,10 +533,26 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
         <table id="dmsTable">
           <thead><tr>
             <th class="sort-th"><button type="button" class="table-sort active" id="dmsDateSortButton" onclick="setDmsSort()">Fecha y hora <span class="sort-arrow">▼</span></button></th>
-            <th>Camión</th><th>Tipo de falta</th><th>Ubicación</th>
+            <th>Camión</th><th>Tipo de falta</th><th>Velocidad</th><th>Condición</th><th>Ubicación</th>
           </tr></thead>
-          <tbody><tr><td colspan="4" class="empty-report">Todavía no hay datos cargados.</td></tr></tbody>
+          <tbody><tr><td colspan="6" class="empty-report">Todavía no hay datos cargados.</td></tr></tbody>
         </table>
+      </div>
+    </section>
+
+    <section class="dms-map-panel">
+      <div class="dms-map-head">
+        <div><h2>Mapa de alertas DMS</h2><p>Color según velocidad y condición cargado/vacío de cada día</p></div>
+        <span class="dms-map-status" id="dmsMapStatus">Sin alertas para mostrar</span>
+      </div>
+      <div id="dmsMap"></div>
+      <div class="dms-map-legend">
+        <span><i class="dms-map-dot" style="background:#22c55e"></i>Sin falta</span>
+        <span><i class="dms-map-dot" style="background:#eab308"></i>Leve</span>
+        <span><i class="dms-map-dot" style="background:#f97316"></i>Media</span>
+        <span><i class="dms-map-dot" style="background:#ef4444"></i>Grave</span>
+        <span><i class="dms-map-dot" style="background:#d946ef"></i>Gravísima</span>
+        <span><i class="dms-map-dot" style="background:#8b949e"></i>Sin velocidad</span>
       </div>
     </section>
   </main>
@@ -800,6 +868,7 @@ async function loadSharedGpsFiles(files){
     rebuildInfractionControls();
     applyFilters();
     renderInfractions();
+    renderDmsReport(false);
   }
   return loadedNames.length;
 }
@@ -906,6 +975,7 @@ function setGpsDayCondition(day,condition){
   rebuildInfractionControls();
   applyFilters();
   renderInfractions(false);
+  renderDmsReport(false);
 }
 
 function rebuildGpsSeverityFilter(){
@@ -965,6 +1035,7 @@ function setGpsCondition(condition){
   rebuildInfractionControls();
   applyFilters();
   renderInfractions(false);
+  renderDmsReport(false);
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -1093,6 +1164,12 @@ function showAppTab(viewId){
   document.getElementById('infractionsTabButton').classList.toggle('active',viewId==='infractionsView');
   document.getElementById('dmsTabButton').classList.toggle('active',viewId==='dmsView');
   if(viewId==='mapView') setTimeout(()=>map.invalidateSize(),50);
+  if(viewId==='dmsView')setTimeout(()=>{
+    if(dmsMap){
+      dmsMap.invalidateSize();
+      fitDmsMap();
+    }
+  },50);
 }
 
 // ── Informe de faltas ────────────────────────────────────────────────────────
@@ -1252,6 +1329,7 @@ function removeSharedGpsFile(entry){
   rebuildInfractionControls();
   applyFilters();
   renderInfractions();
+  renderDmsReport(false);
 }
 
 function rebuildInfractionControls(){
@@ -1304,6 +1382,7 @@ function rebuildInfractionControls(){
       rebuildInfractionControls();
       applyFilters();
       renderInfractions(false);
+      renderDmsReport(false);
     });
     card.querySelector('button').addEventListener('click',()=>removeSharedGpsFile(entry));
     container.appendChild(card);
@@ -1376,6 +1455,7 @@ function setInfractionDayCondition(day,condition){
   rebuildInfractionControls();
   applyFilters();
   renderInfractions(false);
+  renderDmsReport(false);
 }
 
 function renderMultiFilterOptions(kind,values){
@@ -1620,6 +1700,14 @@ const dmsFilterLabels={
   type:{all:'Todas las faltas',plural:'tipos'}
 };
 const dmsChartColors=['#58a6ff','#d2a8ff','#f97316','#3fb950','#f85149','#eab308','#39c5cf','#ec6cb9','#8b949e','#a5d6ff'];
+const DMS_WEIGHT_STORAGE_KEY='vialtec-dms-weighting-v1';
+const DMS_SEVERITIES=['Sin falta','Leve','Media','Grave','Gravísima','Sin velocidad'];
+const DMS_SEVERITY_COLORS={'Sin falta':'#22c55e','Leve':'#eab308','Media':'#f97316','Grave':'#ef4444','Gravísima':'#d946ef','Sin velocidad':'#8b949e'};
+const DMS_DEFAULT_MULTIPLIERS={'Sin falta':1,'Leve':1.25,'Media':1.5,'Grave':2,'Gravísima':3,'Sin velocidad':1};
+let dmsMap=null;
+let dmsMapLayer=null;
+let dmsLastBounds=[];
+let dmsWeights=loadDmsWeights();
 
 function parseDmsPosition(value){
   const numbers=String(value??'').match(/-?\d+(?:\.\d+)?/g)?.map(Number)||[];
@@ -1649,19 +1737,22 @@ async function parseDmsXLS(file){
     const typeIndex=findColumn(headers,['tipo de alarma','tipo de falta','alarma']);
     const timeIndex=findColumn(headers,['hora de inicio','fecha y hora','tiempo de reportar']);
     const positionIndex=findColumn(headers,['posicion de empezar','posicion de inicio','ubicacion','posicion de terminar']);
+    const speedIndex=findColumn(headers,['velocidad','speed','velocidad km h','velocidad de inicio']);
     raw.slice(headerIndex+1).forEach((row,rowIndex)=>{
       const type=String(typeIndex>=0?row[typeIndex]:'').trim();
       const time=excelDateToText(timeIndex>=0?row[timeIndex]:'');
       if(!type||!time)return;
       const date=dateParts(time);
       const position=parseDmsPosition(positionIndex>=0?row[positionIndex]:'');
+      const parsedSpeed=parseSpeedValue(speedIndex>=0?row[speedIndex]:'');
       const truck=String(truckIndex>=0?row[truckIndex]:'').trim()
         ||String(plateIndex>=0?row[plateIndex]:'').trim()
         ||file.name.replace(/\.(xlsx?|xls)$/i,'');
       rows.push({
         id:`${file.name}-${sheetName}-${rowIndex}`,
         fileName:file.name,truck,type,time,day:date.day,sortDate:date.sort,
-        lat:position.lat,lon:position.lon
+        lat:position.lat,lon:position.lon,
+        directSpeed:Number.isFinite(parsedSpeed)?parsedSpeed:null
       });
     });
   });
@@ -1714,6 +1805,135 @@ function getAllDmsRows(){
   return rows;
 }
 
+function loadDmsWeights(){
+  const fallback={types:{},severity:{...DMS_DEFAULT_MULTIPLIERS}};
+  try{
+    const saved=JSON.parse(localStorage.getItem(DMS_WEIGHT_STORAGE_KEY)||'null');
+    if(!saved||typeof saved!=='object')return fallback;
+    return {
+      types:saved.types&&typeof saved.types==='object'?saved.types:{},
+      severity:{...DMS_DEFAULT_MULTIPLIERS,...(saved.severity||{})}
+    };
+  }catch(error){
+    return fallback;
+  }
+}
+
+function saveDmsWeights(){
+  try{localStorage.setItem(DMS_WEIGHT_STORAGE_KEY,JSON.stringify(dmsWeights));}catch(error){}
+}
+
+function defaultDmsTypeWeight(type){
+  const key=normalizeHeader(type);
+  if(/celular|telefono|movil/.test(key))return 5;
+  if(/fumar|cigarrillo|smoking/.test(key))return 3;
+  if(/distraccion|distraction|fatiga|somnolencia/.test(key))return 3;
+  if(/agua|beber|drink/.test(key))return 1;
+  return 1;
+}
+
+function ensureDmsTypeWeights(){
+  let changed=false;
+  [...new Set(getAllDmsRows().map(row=>row.type))].forEach(type=>{
+    if(!Number.isFinite(Number(dmsWeights.types[type]))){
+      dmsWeights.types[type]=defaultDmsTypeWeight(type);
+      changed=true;
+    }
+  });
+  if(changed)saveDmsWeights();
+}
+
+function setDmsWeight(group,key,value){
+  const number=Number(value);
+  if(!Number.isFinite(number)||number<0)return;
+  dmsWeights[group][key]=number;
+  saveDmsWeights();
+  renderDmsReport(false);
+}
+
+function resetDmsWeights(){
+  dmsWeights={types:{},severity:{...DMS_DEFAULT_MULTIPLIERS}};
+  ensureDmsTypeWeights();
+  saveDmsWeights();
+  renderDmsReport(false);
+}
+
+function renderDmsWeightControls(){
+  ensureDmsTypeWeights();
+  const typeContainer=document.getElementById('dmsTypeWeights');
+  const types=[...new Set(getAllDmsRows().map(row=>row.type))].sort((a,b)=>a.localeCompare(b));
+  typeContainer.innerHTML=types.length?types.map((type,index)=>`
+    <label class="dms-weight-item" title="${escapeHTML(type)}">
+      <span>${escapeHTML(type)}</span>
+      <input type="number" min="0" step="0.25" value="${Number(dmsWeights.types[type])}" data-index="${index}">
+    </label>`).join(''):'<div class="chart-empty">Cargá datos DMS para configurar sus tipos.</div>';
+  typeContainer.querySelectorAll('input').forEach(input=>{
+    input.addEventListener('change',()=>setDmsWeight('types',types[Number(input.dataset.index)],input.value));
+  });
+  const severityContainer=document.getElementById('dmsSeverityWeights');
+  severityContainer.innerHTML=DMS_SEVERITIES.map((severity,index)=>`
+    <label class="dms-weight-item">
+      <span><i class="dms-map-dot" style="background:${DMS_SEVERITY_COLORS[severity]}"></i> ${severity}</span>
+      <input type="number" min="0" step="0.25" value="${Number(dmsWeights.severity[severity]??DMS_DEFAULT_MULTIPLIERS[severity])}" data-index="${index}">
+    </label>`).join('');
+  severityContainer.querySelectorAll('input').forEach(input=>{
+    input.addEventListener('change',()=>setDmsWeight('severity',DMS_SEVERITIES[Number(input.dataset.index)],input.value));
+  });
+}
+
+function dmsTimeToMillis(sortDate){
+  const value=Date.parse(sortDate);
+  return Number.isFinite(value)?value:null;
+}
+
+function buildDmsGpsIndex(){
+  const index=new Map();
+  Object.entries(datasets).forEach(([fileName,points])=>{
+    points.forEach(point=>{
+      const truck=normalizeHeader(point.device||getDatasetTruck(fileName));
+      const ts=dmsTimeToMillis(dateParts(point.time).sort);
+      if(!truck||ts===null)return;
+      if(!index.has(truck))index.set(truck,[]);
+      index.get(truck).push({ts,point});
+    });
+  });
+  index.forEach(points=>points.sort((a,b)=>a.ts-b.ts));
+  return index;
+}
+
+function findNearestDmsGpsPoint(row,gpsIndex){
+  const points=gpsIndex.get(normalizeHeader(row.truck));
+  const target=dmsTimeToMillis(row.sortDate);
+  if(!points?.length||target===null)return null;
+  let low=0,high=points.length;
+  while(low<high){
+    const middle=(low+high)>>1;
+    if(points[middle].ts<target)low=middle+1;else high=middle;
+  }
+  const candidates=[points[low],points[low-1]].filter(Boolean);
+  const nearest=candidates.sort((a,b)=>Math.abs(a.ts-target)-Math.abs(b.ts-target))[0];
+  return nearest&&Math.abs(nearest.ts-target)<=5*60*1000?nearest.point:null;
+}
+
+function enrichDmsRows(rows){
+  const gpsIndex=buildDmsGpsIndex();
+  return rows.map(row=>{
+    const gpsPoint=findNearestDmsGpsPoint(row,gpsIndex);
+    const speed=Number.isFinite(row.directSpeed)?row.directSpeed
+      :Number.isFinite(gpsPoint?.speed)?gpsPoint.speed:null;
+    const sourceFile=getVehicleFiles(row.truck)[0]||gpsPoint?.sourceFile||null;
+    const condition=getVehicleDayCondition(row.truck,row.day,sourceFile);
+    const severity=Number.isFinite(speed)?(classifyInfraction(speed,condition)||'Sin falta'):'Sin velocidad';
+    const score=Number(dmsWeights.types[row.type]??defaultDmsTypeWeight(row.type))
+      *Number(dmsWeights.severity[severity]??DMS_DEFAULT_MULTIPLIERS[severity]??1);
+    return {
+      ...row,speed,condition,severity,score,
+      speedSource:Number.isFinite(row.directSpeed)?'dms':Number.isFinite(speed)?'gps':null,
+      mapLat:row.lat??gpsPoint?.lat??null,mapLon:row.lon??gpsPoint?.lon??null
+    };
+  });
+}
+
 function rebuildDmsFilterOptions(){
   const allRows=getAllDmsRows();
   const days=[...new Set(allRows.map(row=>row.day))].sort((a,b)=>dateParts(a).sort.localeCompare(dateParts(b).sort));
@@ -1725,6 +1945,7 @@ function rebuildDmsFilterOptions(){
   renderDmsMultiOptions('day',days);
   renderDmsMultiOptions('truck',trucks);
   renderDmsMultiOptions('type',types);
+  renderDmsWeightControls();
 }
 
 function pruneDmsSelection(kind,values){
@@ -1839,10 +2060,88 @@ function renderDmsDonut(){
     </div>`).join('');
 }
 
+function renderDmsScoreChart(){
+  const trucks=new Map();
+  filteredDmsRows.forEach(row=>{
+    if(!trucks.has(row.truck))trucks.set(row.truck,{score:0,count:0,types:new Map()});
+    const item=trucks.get(row.truck);
+    item.score+=row.score;
+    item.count++;
+    item.types.set(row.type,(item.types.get(row.type)||0)+1);
+  });
+  const entries=[...trucks.entries()].sort((a,b)=>b[1].score-a[1].score||a[0].localeCompare(b[0]));
+  const total=entries.reduce((sum,[,item])=>sum+item.score,0);
+  document.getElementById('dmsScoreTotal').textContent=total.toLocaleString('es-AR',{maximumFractionDigits:2});
+  const container=document.getElementById('dmsScoreChart');
+  if(!entries.length){
+    container.innerHTML='<div class="chart-empty">No hay alarmas para mostrar.</div>';
+    return;
+  }
+  const max=Math.max(...entries.map(([,item])=>item.score),1);
+  container.innerHTML=entries.map(([truck,item])=>{
+    const detail=[...item.types.entries()].sort((a,b)=>b[1]-a[1])
+      .map(([type,count])=>`${escapeHTML(type)}: ${count}`).join(' · ');
+    return `<div class="dms-score-row">
+      <div class="chart-truck" title="${escapeHTML(truck)}">${escapeHTML(truck)}</div>
+      <div class="bar-track" title="${item.count} alertas"><div class="dms-score-fill" style="width:${item.score/max*100}%"></div></div>
+      <div class="bar-count">${item.score.toLocaleString('es-AR',{maximumFractionDigits:2})} pts</div>
+      <div class="dms-score-detail">${item.count} alerta${item.count===1?'':'s'} · ${detail}</div>
+    </div>`;
+  }).join('');
+}
+
+function ensureDmsMap(){
+  if(dmsMap)return;
+  dmsMap=L.map('dmsMap',{center:[-23.42,-68.67],zoom:7,zoomControl:true,preferCanvas:true});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© OpenStreetMap contributors',maxZoom:19
+  }).addTo(dmsMap);
+  dmsMapLayer=L.layerGroup().addTo(dmsMap);
+}
+
+function fitDmsMap(){
+  if(!dmsMap||!dmsLastBounds.length)return;
+  dmsMap.fitBounds(L.latLngBounds(dmsLastBounds),{padding:[35,35],maxZoom:14});
+}
+
+function renderDmsMap(){
+  ensureDmsMap();
+  dmsMapLayer.clearLayers();
+  dmsLastBounds=[];
+  let mapped=0;
+  filteredDmsRows.forEach(row=>{
+    if(!Number.isFinite(row.mapLat)||!Number.isFinite(row.mapLon))return;
+    const color=DMS_SEVERITY_COLORS[row.severity]||DMS_SEVERITY_COLORS['Sin velocidad'];
+    const speedText=Number.isFinite(row.speed)
+      ?`${row.speed.toFixed(1)} km/h${row.speedSource==='gps'?' (GPS cercano)':''}`
+      :'Sin velocidad';
+    const marker=L.circleMarker([row.mapLat,row.mapLon],{
+      radius:7,color:'#0d1117',weight:1.5,fillColor:color,fillOpacity:.92
+    }).bindPopup(`<div style="min-width:210px;line-height:1.55">
+      <b>${escapeHTML(row.truck)}</b><br>
+      ${escapeHTML(row.time)}<br>
+      <b>Alarma:</b> ${escapeHTML(row.type)}<br>
+      <b>Velocidad:</b> ${escapeHTML(speedText)}<br>
+      <b>Categoría:</b> ${escapeHTML(row.severity)}<br>
+      <b>Condición:</b> ${row.condition==='empty'?'Vacío':'Cargado'}
+    </div>`);
+    marker.addTo(dmsMapLayer);
+    dmsLastBounds.push([row.mapLat,row.mapLon]);
+    mapped++;
+  });
+  document.getElementById('dmsMapStatus').textContent=mapped
+    ?`${mapped.toLocaleString()} alerta${mapped===1?'':'s'} ubicadas`
+    :filteredDmsRows.length?'Las alertas visibles no tienen coordenadas':'Sin alertas para mostrar';
+  setTimeout(()=>{
+    dmsMap.invalidateSize();
+    fitDmsMap();
+  },50);
+}
+
 function renderDmsReport(rebuildOptions=true){
   if(rebuildOptions)rebuildDmsFilterOptions();
   const days=dmsSelections.day,trucks=dmsSelections.truck,types=dmsSelections.type;
-  filteredDmsRows=getAllDmsRows().filter(row=>
+  filteredDmsRows=enrichDmsRows(getAllDmsRows()).filter(row=>
     (!days.size||days.has(row.day))&&(!trucks.size||trucks.has(row.truck))&&(!types.size||types.has(row.type))
   );
   const direction=dmsSort.direction==='asc'?1:-1;
@@ -1859,20 +2158,29 @@ function renderDmsReport(rebuildOptions=true){
     :'Cargá uno o más archivos para comenzar';
   renderDmsTruckChart();
   renderDmsDonut();
+  renderDmsScoreChart();
+  renderDmsMap();
 
   const tbody=document.querySelector('#dmsTable tbody');
   if(!filteredDmsRows.length){
-    tbody.innerHTML=`<tr><td colspan="4" class="empty-report">${dmsFiles.size?'No hay alarmas para los filtros seleccionados.':'Todavía no hay datos cargados.'}</td></tr>`;
+    tbody.innerHTML=`<tr><td colspan="6" class="empty-report">${dmsFiles.size?'No hay alarmas para los filtros seleccionados.':'Todavía no hay datos cargados.'}</td></tr>`;
     return;
   }
   tbody.innerHTML=filteredDmsRows.map(row=>{
-    const location=row.lat!==null&&row.lon!==null
-      ?`<a class="map-link" href="https://www.google.com/maps?q=${row.lat},${row.lon}" target="_blank" rel="noopener">${row.lat.toFixed(6)}, ${row.lon.toFixed(6)} ↗</a>`
+    const location=row.mapLat!==null&&row.mapLon!==null
+      ?`<a class="map-link" href="https://www.google.com/maps?q=${row.mapLat},${row.mapLon}" target="_blank" rel="noopener">${row.mapLat.toFixed(6)}, ${row.mapLon.toFixed(6)} ↗</a>`
       :'Sin coordenadas';
+    const speed=Number.isFinite(row.speed)
+      ?`${row.speed.toFixed(1)} km/h${row.speedSource==='gps'?'<br><small>GPS cercano</small>':''}`
+      :'Sin velocidad';
+    const speedClass=row.severity==='Sin velocidad'?'dms-speed-none'
+      :row.severity==='Sin falta'?'dms-speed-sin-falta':`fault-${normalizeHeader(row.severity).replace(/\s/g,'-')}`;
     return `<tr>
       <td>${escapeHTML(row.time)}</td>
       <td><b>${escapeHTML(row.truck)}</b></td>
       <td><span class="dms-alarm-badge">${escapeHTML(row.type)}</span></td>
+      <td><span class="dms-speed-badge ${speedClass}">${speed}</span></td>
+      <td><b>${row.condition==='empty'?'Vacío':'Cargado'}</b><br><span class="dms-condition">${escapeHTML(row.severity)}</span></td>
       <td>${location}</td>
     </tr>`;
   }).join('');
