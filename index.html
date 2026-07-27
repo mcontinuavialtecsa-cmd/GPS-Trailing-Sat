@@ -1977,22 +1977,70 @@ function selectDmsOption(kind,value,checked){
   renderDmsReport(false);
 }
 
+function getDmsConditionTrucks(){
+  if(dmsSelections.truck.size)return [...dmsSelections.truck];
+  return [...new Set(getAllDmsRows().map(row=>row.truck))];
+}
+
+function getDmsDayConditionSummary(day){
+  const conditions=new Set(getDmsConditionTrucks().map(truck=>{
+    const gpsFile=getVehicleFiles(truck)[0]||null;
+    return getVehicleDayCondition(truck,day,gpsFile);
+  }));
+  return conditions.size===1?[...conditions][0]:'mixed';
+}
+
+function setDmsDayCondition(day,condition){
+  if(condition==='mixed')return;
+  getDmsConditionTrucks().forEach(truck=>setVehicleDayCondition(truck,day,condition));
+  updateGpsConditionSelect();
+  rebuildDayFilter();
+  rebuildInfractionControls();
+  applyFilters();
+  renderInfractions(false);
+  rebuildDmsFilterOptions();
+  renderDmsReport(false);
+}
+
 function renderDmsMultiOptions(kind,values){
   const prefix=kind[0].toUpperCase()+kind.slice(1);
   const selected=dmsSelections[kind];
   const container=document.getElementById(`dms${prefix}MultiOptions`);
+  const optionMarkup=kind==='day'
+    ?values.map(value=>{
+      const condition=getDmsDayConditionSummary(value);
+      return `<div class="day-condition-row">
+        <label class="multi-option">
+          <input type="checkbox" ${selected.has(value)?'checked':''} data-value="${escapeHTML(value)}">
+          <span>${escapeHTML(value)}</span>
+        </label>
+        <select class="day-condition-select ${condition==='mixed'?'mixed':''}" data-day="${escapeHTML(value)}" aria-label="Condición del ${escapeHTML(value)}">
+          ${condition==='mixed'?'<option value="mixed" selected>↕ Mixto</option>':''}
+          <option value="loaded" ${condition==='loaded'?'selected':''}>🚛 Cargado</option>
+          <option value="empty" ${condition==='empty'?'selected':''}>⬚ Vacío</option>
+        </select>
+      </div>`;
+    }).join('')
+    :values.map(value=>`
+      <label class="multi-option">
+        <input type="checkbox" ${selected.has(value)?'checked':''} data-value="${escapeHTML(value)}"> ${escapeHTML(value)}
+      </label>`).join('');
   container.innerHTML=`
     <label class="multi-option multi-option-all">
       <input type="checkbox" ${selected.size===0?'checked':''} data-value="__all__"> ${dmsFilterLabels[kind].all}
     </label>
-    ${values.map(value=>`
-      <label class="multi-option">
-        <input type="checkbox" ${selected.has(value)?'checked':''} data-value="${escapeHTML(value)}"> ${escapeHTML(value)}
-      </label>`).join('')}`;
-  container.querySelectorAll('input').forEach(input=>{
+    ${optionMarkup}`;
+  container.querySelectorAll('input[type="checkbox"]').forEach(input=>{
     input.addEventListener('change',event=>{
       event.stopPropagation();
       selectDmsOption(kind,input.dataset.value,input.checked);
+    });
+  });
+  container.querySelectorAll('.day-condition-select').forEach(select=>{
+    select.addEventListener('click',event=>event.stopPropagation());
+    select.addEventListener('change',event=>{
+      event.stopPropagation();
+      setDmsDayCondition(select.dataset.day,select.value);
     });
   });
   const button=document.getElementById(`dms${prefix}MultiButton`);
