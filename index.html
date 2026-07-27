@@ -109,6 +109,11 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
 .multi-option:hover{background:#21262d}
 .multi-option input{accent-color:#58a6ff}
 .multi-option-all{border-bottom:1px solid #30363d;margin-bottom:4px!important;font-weight:700}
+.day-condition-row{display:grid;grid-template-columns:minmax(145px,1fr) auto;gap:8px;align-items:center;border-radius:5px}
+.day-condition-row:hover{background:#21262d}
+.day-condition-row .multi-option{min-width:0}
+.day-condition-select{min-width:105px;padding:4px 6px;font-size:10px}
+.day-condition-select.mixed{color:#d2a8ff;border-color:#6e40c9}
 .summary-grid{display:grid;grid-template-columns:repeat(5,minmax(110px,1fr));gap:10px}
 .summary-card{background:#161b22;border:1px solid #30363d;border-radius:9px;padding:12px}
 .summary-card span{display:block;color:#8b949e;font-size:10px;text-transform:uppercase;letter-spacing:.5px}
@@ -208,9 +213,10 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
       <button type="button" class="multi-filter-button" id="gpsDayMultiButton" onclick="toggleGpsDayFilter(event)">📅 Todos los días</button>
       <div class="multi-filter-menu" id="gpsDayMultiOptions"></div>
     </div>
-    <select id="gpsConditionSelect" onchange="setGpsCondition(this.value)" title="Condición del camión">
-      <option value="loaded">🚛 Cargado</option>
-      <option value="empty">⬚ Vacío</option>
+    <select id="gpsConditionSelect" onchange="setGpsCondition(this.value)" title="Aplicar condición a todos los días del camión">
+      <option value="mixed" disabled>↕ Mixto por día</option>
+      <option value="loaded">🚛 Todos cargados</option>
+      <option value="empty">⬚ Todos vacíos</option>
     </select>
     <div class="multi-filter" id="gpsSeverityMultiFilter">
       <button type="button" class="multi-filter-button" id="gpsSeverityMultiButton" onclick="toggleGpsSeverityFilter(event)">⚡ Todas las categorías</button>
@@ -497,6 +503,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 // ── State ─────────────────────────────────────────────────────────────────────
 const datasets = {};   // filename -> array of points
 const datasetConditions = {};
+const vehicleDayConditions = {}; // vehicle -> day -> loaded | empty
 const gpsDaySelection = new Set();
 const gpsSeveritySelection = new Set();
 let activeFile = null;
@@ -525,13 +532,54 @@ function getActiveData(){
   return getVehicleFiles().flatMap(fileName=>datasets[fileName]||[])
     .sort((a,b)=>dateParts(a.time).sort.localeCompare(dateParts(b.time).sort));
 }
-function getSpeedCategory(speed,sourceFile=activeFile){
-  const condition=datasetConditions[sourceFile]||getActiveCondition();
-  return classifyInfraction(speed,condition)||'Sin falta';
+function getPointDay(point){
+  return dateParts(point?.time||'').day;
 }
-function getColor(speed,sourceFile=activeFile){
-  return {'Sin falta':'#22c55e','Leve':'#eab308','Media':'#f97316','Grave':'#ef4444','Gravísima':'#d946ef'}[getSpeedCategory(speed,sourceFile)];
+function ensureVehicleDayConditions(vehicle,points=[],fallback='loaded'){
+  if(!vehicle)return {};
+  if(!vehicleDayConditions[vehicle])vehicleDayConditions[vehicle]={};
+  points.forEach(point=>{
+    const day=getPointDay(point);
+    if(day&&!vehicleDayConditions[vehicle][day])vehicleDayConditions[vehicle][day]=fallback;
+  });
+  return vehicleDayConditions[vehicle];
 }
+function getVehicleDayCondition(vehicle,day,sourceFile=null){
+  return vehicleDayConditions[vehicle]?.[day]||datasetConditions[sourceFile]||'loaded';
+}
+function setVehicleDayCondition(vehicle,day,condition){
+  if(!vehicle||!day||!['loaded','empty'].includes(condition))return;
+  ensureVehicleDayConditions(vehicle)[day]=condition;
+}
+function getVehicleDays(vehicle){
+  return [...new Set(getVehicleFiles(vehicle).flatMap(fileName=>(datasets[fileName]||[]).map(getPointDay)))]
+    .filter(Boolean).sort((a,b)=>dateParts(a).sort.localeCompare(dateParts(b).sort));
+}
+function getVehicleConditionSummary(vehicle,days=getVehicleDays(vehicle)){
+  const conditions=new Set(days.map(day=>getVehicleDayCondition(vehicle,day,getVehicleFiles(vehicle)[0])));
+  return conditions.size===1?[...conditions][0]:'mixed';
+}
+function applyConditionToVehicleDays(vehicle,condition){
+  if(!vehicle||!['loaded','empty'].includes(condition))return;
+  const files=getVehicleFiles(vehicle);
+  files.forEach(fileName=>{datasetConditions[fileName]=condition;});
+  getVehicleDays(vehicle).forEach(day=>setVehicleDayCondition(vehicle,day,condition));
+  if(typeof infractionFiles!=='undefined'){
+    infractionFiles.forEach(entry=>{if(entry.truck===vehicle)entry.condition=condition;});
+  }
+}
+function getPointCondition(point){
+  const sourceFile=point?.sourceFile||activeFile;
+  const vehicle=point?.device||getDatasetTruck(sourceFile);
+  return getVehicleDayCondition(vehicle,getPointDay(point),sourceFile);
+}
+function getPointSpeedCategory(point){
+  return classifyInfraction(point.speed,getPointCondition(point))||'Sin falta';
+}
+function getPointColor(point){
+  return {'Sin falta':'#22c55e','Leve':'#eab308','Media':'#f97316','Grave':'#ef4444','Gravísima':'#d946ef'}[getPointSpeedCategory(point)];
+}
+ensureVehicleDayConditions(activeVehicle,PRELOADED,'loaded');
 function headingToText(h){
   const dirs=['N','NE','E','SE','S','SO','O','NO','N'];
   return dirs[Math.round(h/45)%8];
@@ -725,11 +773,14 @@ async function loadSharedGpsFiles(files){
       const rows=gpsPointsToInfractionRows(file,points);
       const existing=infractionFiles.get(key);
       const condition=existing?.condition||datasetConditions[file.name]||'loaded';
+      const truck=existing?.truck||defaultTruckName(file.name,rows);
+      points.forEach(point=>{if(!point.device)point.device=truck;});
       datasets[file.name]=points;
       datasetConditions[file.name]=condition;
+      ensureVehicleDayConditions(truck,points,condition);
       infractionFiles.set(key,{
         key,fileName:file.name,
-        truck:existing?.truck||defaultTruckName(file.name,rows),
+        truck,
         condition,rows
       });
       addFileTag(file.name);
@@ -799,13 +850,27 @@ function rebuildDayFilter(){
       <input type="checkbox" ${gpsDaySelection.size===0?'checked':''} data-day="__all__"> Todos los días
     </label>
     ${days.map(day=>`
-      <label class="multi-option">
-        <input type="checkbox" ${gpsDaySelection.has(day)?'checked':''} data-day="${escapeHTML(day)}"> ${escapeHTML(day)}
-      </label>`).join('')}`;
-  container.querySelectorAll('input').forEach(input=>{
+      <div class="day-condition-row">
+        <label class="multi-option">
+          <input type="checkbox" ${gpsDaySelection.has(day)?'checked':''} data-day="${escapeHTML(day)}">
+          <span>${escapeHTML(day)}</span>
+        </label>
+        <select class="day-condition-select" data-condition-day="${escapeHTML(day)}" aria-label="Condición del ${escapeHTML(day)}">
+          <option value="loaded" ${getVehicleDayCondition(activeVehicle,day,activeFile)==='loaded'?'selected':''}>🚛 Cargado</option>
+          <option value="empty" ${getVehicleDayCondition(activeVehicle,day,activeFile)==='empty'?'selected':''}>⬚ Vacío</option>
+        </select>
+      </div>`).join('')}`;
+  container.querySelectorAll('input[data-day]').forEach(input=>{
     input.addEventListener('change',event=>{
       event.stopPropagation();
       selectGpsDay(input.dataset.day,input.checked);
+    });
+  });
+  container.querySelectorAll('select[data-condition-day]').forEach(select=>{
+    select.addEventListener('click',event=>event.stopPropagation());
+    select.addEventListener('change',event=>{
+      event.stopPropagation();
+      setGpsDayCondition(select.dataset.conditionDay,select.value);
     });
   });
   const button=document.getElementById('gpsDayMultiButton');
@@ -833,6 +898,14 @@ function selectGpsDay(day,checked){
   }
   rebuildDayFilter();
   applyFilters();
+}
+
+function setGpsDayCondition(day,condition){
+  setVehicleDayCondition(activeVehicle,day,condition);
+  updateGpsConditionSelect();
+  rebuildInfractionControls();
+  applyFilters();
+  renderInfractions(false);
 }
 
 function rebuildGpsSeverityFilter(){
@@ -880,19 +953,18 @@ function selectGpsSeverity(category,checked){
 }
 
 function updateGpsConditionSelect(){
-  document.getElementById('gpsConditionSelect').value=getActiveCondition();
+  const select=document.getElementById('gpsConditionSelect');
+  if(!activeVehicle){select.value='loaded';return;}
+  select.value=getVehicleConditionSummary(activeVehicle);
 }
 
 function setGpsCondition(condition){
-  if(!activeVehicle)return;
-  const vehicleFiles=getVehicleFiles();
-  vehicleFiles.forEach(fileName=>{datasetConditions[fileName]=condition;});
-  infractionFiles.forEach(entry=>{
-    if(vehicleFiles.includes(entry.fileName))entry.condition=condition;
-  });
+  if(!activeVehicle||condition==='mixed')return;
+  applyConditionToVehicleDays(activeVehicle,condition);
+  rebuildDayFilter();
   rebuildInfractionControls();
   applyFilters();
-  renderInfractions();
+  renderInfractions(false);
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -904,7 +976,7 @@ function applyFilters(){
   const dayPts=gpsDaySelection.size?data.filter(d=>gpsDaySelection.has(d.time.slice(0,10))):data;
   const distanceBreakdown=calculateDistanceBreakdown(
     dayPts,
-    point=>getSpeedCategory(point.speed,point.sourceFile)
+    point=>getPointSpeedCategory(point)
   );
   const kmRecorridos=distanceBreakdown.total;
   renderGpsRoutePercentages(distanceBreakdown);
@@ -912,7 +984,7 @@ function applyFilters(){
 
   // Then apply severity/movement filters just for what's DISPLAYED on the map
   let pts=dayPts;
-  if(gpsSeveritySelection.size)pts=pts.filter(d=>gpsSeveritySelection.has(getSpeedCategory(d.speed,d.sourceFile)));
+  if(gpsSeveritySelection.size)pts=pts.filter(d=>gpsSeveritySelection.has(getPointSpeedCategory(d)));
   if(arr==='moving') pts=pts.filter(d=>d.speed>0);
 
   renderMap(pts, kmRecorridos);
@@ -957,22 +1029,22 @@ function renderMap(pts, kmRecorridos){
     if(showArrows){
       const icon=L.divIcon({
         className:'arrow-icon',
-        html:arrowSVG(getColor(d.speed,d.sourceFile),d.heading,14),
+        html:arrowSVG(getPointColor(d),d.heading,14),
         iconSize:[14,14],iconAnchor:[7,7]
       });
       marker=L.marker([d.lat,d.lon],{icon});
     } else {
       marker=L.circleMarker([d.lat,d.lon],{
-        radius:{'Sin falta':3.5,'Leve':4.5,'Media':5,'Grave':5.5,'Gravísima':6}[getSpeedCategory(d.speed,d.sourceFile)],
-        fillColor:getColor(d.speed,d.sourceFile),color:'transparent',fillOpacity:0.82,weight:0
+        radius:{'Sin falta':3.5,'Leve':4.5,'Media':5,'Grave':5.5,'Gravísima':6}[getPointSpeedCategory(d)],
+        fillColor:getPointColor(d),color:'transparent',fillOpacity:0.82,weight:0
       });
     }
 
     marker.on('mouseover',function(e){
       tooltip.style.display='block';
       tooltip.innerHTML=`
-        <div class="tt-speed" style="color:${getColor(d.speed,d.sourceFile)}">${d.speed.toFixed(1)} km/h</div>
-        <div class="tt-row">⚠ <b>${getSpeedCategory(d.speed,d.sourceFile)}</b> · ${(datasetConditions[d.sourceFile]||'loaded')==='empty'?'Vacío':'Cargado'}</div>
+        <div class="tt-speed" style="color:${getPointColor(d)}">${d.speed.toFixed(1)} km/h</div>
+        <div class="tt-row">⚠ <b>${getPointSpeedCategory(d)}</b> · ${getPointCondition(d)==='empty'?'Vacío':'Cargado'}</div>
         <div class="tt-row">🕐 <b>${d.time}</b></div>
         <div class="tt-row">🧭 <b>${headingToText(d.heading)}</b> (${Math.round(d.heading)}°)</div>
         <div class="tt-row">📍 <b>${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}</b></div>
@@ -1166,6 +1238,7 @@ function removeSharedGpsFile(entry){
     if(tag.dataset.fileName===entry.fileName)tag.remove();
   });
   fileList.style.display=fileList.children.length?'flex':'none';
+  if(!getVehicleFiles(removedVehicle).length)delete vehicleDayConditions[removedVehicle];
   if(activeVehicle===removedVehicle&&!getVehicleFiles(removedVehicle).length){
     const firstFile=Object.keys(datasets)[0]||null;
     activeVehicle=firstFile?getDatasetTruck(firstFile):null;
@@ -1189,34 +1262,48 @@ function rebuildInfractionControls(){
   infractionFiles.forEach(entry=>{
     const card=document.createElement('div');
     card.className='truck-card';
+    const bulkCondition=getVehicleConditionSummary(entry.truck);
     card.innerHTML=`
       <div class="truck-meta">
         <input aria-label="Nombre del camión" value="${escapeHTML(entry.truck)}">
         <span class="truck-file">${escapeHTML(entry.fileName)} · ${entry.rows.length.toLocaleString()} registros</span>
       </div>
-      <select class="condition-select" aria-label="Condición del camión">
-        <option value="loaded" ${entry.condition==='loaded'?'selected':''}>🚛 Cargado</option>
-        <option value="empty" ${entry.condition==='empty'?'selected':''}>⬚ Vacío</option>
+      <select class="condition-select" aria-label="Aplicar condición a todos los días de ${escapeHTML(entry.truck)}">
+        <option value="mixed" ${bulkCondition==='mixed'?'selected':''} disabled>↕ Mixto por día</option>
+        <option value="loaded" ${bulkCondition==='loaded'?'selected':''}>🚛 Todos cargados</option>
+        <option value="empty" ${bulkCondition==='empty'?'selected':''}>⬚ Todos vacíos</option>
       </select>
       <button class="remove-file" title="Quitar archivo" aria-label="Quitar ${escapeHTML(entry.fileName)}">✕</button>`;
     const input=card.querySelector('input');
     input.addEventListener('change',()=>{
+      const previousTruck=entry.truck;
       const wasActive=getDatasetTruck(entry.fileName)===activeVehicle;
       entry.truck=input.value.trim()||defaultTruckName(entry.fileName,entry.rows);
+      if(entry.truck!==previousTruck){
+        vehicleDayConditions[entry.truck]={
+          ...(vehicleDayConditions[previousTruck]||{}),
+          ...(vehicleDayConditions[entry.truck]||{})
+        };
+      }
       (datasets[entry.fileName]||[]).forEach(point=>{point.device=entry.truck;});
+      ensureVehicleDayConditions(entry.truck,datasets[entry.fileName]||[],entry.condition);
       if(wasActive)activeVehicle=entry.truck;
       rebuildFileSelect();
       document.getElementById('fileSelect').value=activeVehicle;
+      updateGpsConditionSelect();
+      rebuildDayFilter();
       rebuildInfractionControls();
       applyFilters();
       renderInfractions();
     });
     card.querySelector('select').addEventListener('change',event=>{
-      entry.condition=event.target.value;
-      datasetConditions[entry.fileName]=entry.condition;
-      if(activeFile===entry.fileName)updateGpsConditionSelect();
+      if(event.target.value==='mixed')return;
+      applyConditionToVehicleDays(entry.truck,event.target.value);
+      updateGpsConditionSelect();
+      rebuildDayFilter();
+      rebuildInfractionControls();
       applyFilters();
-      renderInfractions();
+      renderInfractions(false);
     });
     card.querySelector('button').addEventListener('click',()=>removeSharedGpsFile(entry));
     container.appendChild(card);
@@ -1268,22 +1355,68 @@ function selectMultiOption(kind,value,checked){
   renderInfractions(false);
 }
 
+function getInfractionConditionTrucks(){
+  if(infractionSelections.truck.size)return [...infractionSelections.truck];
+  return [...new Set([...infractionFiles.values()].map(entry=>entry.truck))];
+}
+
+function getInfractionDayConditionSummary(day){
+  const conditions=new Set(getInfractionConditionTrucks().map(truck=>{
+    const entry=[...infractionFiles.values()].find(item=>item.truck===truck);
+    return getVehicleDayCondition(truck,day,entry?.fileName||null);
+  }));
+  return conditions.size===1?[...conditions][0]:'mixed';
+}
+
+function setInfractionDayCondition(day,condition){
+  if(condition==='mixed')return;
+  getInfractionConditionTrucks().forEach(truck=>setVehicleDayCondition(truck,day,condition));
+  updateGpsConditionSelect();
+  rebuildDayFilter();
+  rebuildInfractionControls();
+  applyFilters();
+  renderInfractions(false);
+}
+
 function renderMultiFilterOptions(kind,values){
   const selected=infractionSelections[kind];
   const container=document.getElementById(`${kind}MultiOptions`);
   const allChecked=selected.size===0;
+  const optionMarkup=kind==='day'
+    ?values.map(value=>{
+      const condition=getInfractionDayConditionSummary(value);
+      return `<div class="day-condition-row">
+        <label class="multi-option">
+          <input type="checkbox" ${selected.has(value)?'checked':''} data-value="${escapeHTML(value)}">
+          <span>${escapeHTML(value)}</span>
+        </label>
+        <select class="day-condition-select ${condition==='mixed'?'mixed':''}" data-report-condition-day="${escapeHTML(value)}" aria-label="Condición del ${escapeHTML(value)}">
+          <option value="mixed" ${condition==='mixed'?'selected':''} disabled>↕ Mixto</option>
+          <option value="loaded" ${condition==='loaded'?'selected':''}>🚛 Cargado</option>
+          <option value="empty" ${condition==='empty'?'selected':''}>⬚ Vacío</option>
+        </select>
+      </div>`;
+    }).join('')
+    :values.map(value=>`
+      <label class="multi-option">
+        <input type="checkbox" ${selected.has(value)?'checked':''} data-value="${escapeHTML(value)}"> ${escapeHTML(value)}
+      </label>`).join('');
   container.innerHTML=`
     <label class="multi-option multi-option-all">
       <input type="checkbox" ${allChecked?'checked':''} data-value="__all__"> ${multiFilterLabels[kind].all}
     </label>
-    ${values.map(value=>`
-      <label class="multi-option">
-        <input type="checkbox" ${selected.has(value)?'checked':''} data-value="${escapeHTML(value)}"> ${escapeHTML(value)}
-      </label>`).join('')}`;
-  container.querySelectorAll('input').forEach(input=>{
+    ${optionMarkup}`;
+  container.querySelectorAll('input[data-value]').forEach(input=>{
     input.addEventListener('change',event=>{
       event.stopPropagation();
       selectMultiOption(kind,input.dataset.value,input.checked);
+    });
+  });
+  container.querySelectorAll('select[data-report-condition-day]').forEach(select=>{
+    select.addEventListener('click',event=>event.stopPropagation());
+    select.addEventListener('change',event=>{
+      event.stopPropagation();
+      setInfractionDayCondition(select.dataset.reportConditionDay,select.value);
     });
   });
   syncMultiFilterButton(kind);
@@ -1306,8 +1439,9 @@ function getAllInfractions(){
   const infractions=[];
   infractionFiles.forEach(entry=>{
     entry.rows.forEach(row=>{
-      const fault=classifyInfraction(row.speed,entry.condition);
-      if(fault)infractions.push({...row,truck:entry.truck,condition:entry.condition,fault});
+      const condition=getVehicleDayCondition(entry.truck,row.day,entry.fileName);
+      const fault=classifyInfraction(row.speed,condition);
+      if(fault)infractions.push({...row,truck:entry.truck,condition,fault});
     });
   });
   return infractions.sort((a,b)=>a.sortDate.localeCompare(b.sortDate)||a.truck.localeCompare(b.truck));
@@ -1397,7 +1531,10 @@ function getInfractionDistanceBreakdown(){
     includedFiles.add(entry.fileName);
     (datasets[entry.fileName]||[]).forEach(point=>{
       if(days.size&&!days.has(dateParts(point.time).day))return;
-      points.push({...point,routeCondition:entry.condition});
+      points.push({
+        ...point,
+        routeCondition:getVehicleDayCondition(entry.truck,getPointDay(point),entry.fileName)
+      });
     });
   });
   return calculateDistanceBreakdown(
