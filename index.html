@@ -141,6 +141,8 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
 .report-panel{overflow:hidden}
 .report-title{padding:12px 14px;border-bottom:1px solid #30363d;display:flex;justify-content:space-between;gap:12px;align-items:center}
 .report-title h2{font-size:14px}.report-title span{font-size:11px;color:#8b949e}
+.report-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+.report-actions button{padding:4px 8px;font-size:10px}.report-page{min-width:74px;text-align:center}
 .table-wrap{overflow:auto;max-height:48vh}
 #infractionsTable,#dmsTable{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
 #infractionsTable th,#dmsTable th{position:sticky;top:0;background:#21262d;color:#8b949e;text-align:left;padding:9px 12px;font-size:10px;text-transform:uppercase;letter-spacing:.4px}
@@ -531,7 +533,12 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
     <section class="report-panel">
       <div class="report-title">
         <h2>Detalle de alarmas DMS</h2>
-        <span id="dmsReportStatus">Cargá uno o más archivos para comenzar</span>
+        <div class="report-actions">
+          <span id="dmsReportStatus">Cargá uno o más archivos para comenzar</span>
+          <button type="button" id="dmsPagePrev" onclick="changeDmsTablePage(-1)" disabled>← Anterior</button>
+          <span class="report-page" id="dmsPageStatus">Página 0 de 0</span>
+          <button type="button" id="dmsPageNext" onclick="changeDmsTablePage(1)" disabled>Siguiente →</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table id="dmsTable">
@@ -1736,6 +1743,8 @@ const dmsFilterLabels={
   type:{all:'Todas las faltas',plural:'tipos'}
 };
 const dmsChartColors=['#58a6ff','#d2a8ff','#f97316','#3fb950','#f85149','#eab308','#39c5cf','#ec6cb9','#8b949e','#a5d6ff'];
+const DMS_TABLE_PAGE_SIZE=250;
+const DMS_MAP_MARKER_LIMIT=1200;
 const dmsMapFilterLabels={
   day:{all:'Todas las fechas',plural:'fechas'},
   truck:{all:'Todos los camiones',plural:'camiones'},
@@ -1751,6 +1760,7 @@ let dmsMapLayer=null;
 let dmsLastBounds=[];
 let dmsLastFitKey='';
 let dmsGpsIndexCache={key:'',index:new Map()};
+let dmsTablePage=1;
 let dmsWeights=loadDmsWeights();
 
 function parseDmsPosition(value){
@@ -2304,10 +2314,13 @@ function renderDmsMap(){
   dmsMapLayer.clearLayers();
   dmsLastBounds=[];
   const mapRows=getFilteredDmsMapRows();
-  const fitKey=mapRows.map(row=>row.id).join('|');
+  const fitKey=`${mapRows.length}:${mapRows[0]?.id||''}:${mapRows[mapRows.length-1]?.id||''}:${Object.values(dmsMapSelections).map(set=>[...set].join(',')).join('|')}`;
+  const locatedRows=mapRows.filter(row=>Number.isFinite(row.mapLat)&&Number.isFinite(row.mapLon));
+  const displayRows=locatedRows.length>DMS_MAP_MARKER_LIMIT
+    ?Array.from({length:DMS_MAP_MARKER_LIMIT},(_,index)=>locatedRows[Math.floor(index*locatedRows.length/DMS_MAP_MARKER_LIMIT)])
+    :locatedRows;
   let mapped=0;
-  mapRows.forEach(row=>{
-    if(!Number.isFinite(row.mapLat)||!Number.isFinite(row.mapLon))return;
+  displayRows.forEach(row=>{
     const color=DMS_SEVERITY_COLORS[row.severity]||DMS_SEVERITY_COLORS['Sin velocidad'];
     const speedText=Number.isFinite(row.speed)
       ?`${row.speed.toFixed(1)} km/h${row.speedSource==='gps'?' (GPS cercano)':''}`
@@ -2327,7 +2340,9 @@ function renderDmsMap(){
     mapped++;
   });
   document.getElementById('dmsMapStatus').textContent=mapped
-    ?`${mapped.toLocaleString()} de ${filteredDmsRows.length.toLocaleString()} alerta${filteredDmsRows.length===1?'':'s'} ubicadas`
+    ?locatedRows.length>DMS_MAP_MARKER_LIMIT
+      ?`${mapped.toLocaleString()} marcadores de ${locatedRows.length.toLocaleString()} alertas · aplicá filtros para ver más detalle`
+      :`${mapped.toLocaleString()} de ${filteredDmsRows.length.toLocaleString()} alerta${filteredDmsRows.length===1?'':'s'} ubicada${filteredDmsRows.length===1?'':'s'}`
     :mapRows.length?'Las alertas seleccionadas no tienen coordenadas':'Sin alertas para mostrar';
   setTimeout(()=>{
     dmsMap.invalidateSize();
@@ -2336,6 +2351,44 @@ function renderDmsMap(){
       fitDmsMap();
     }
   },50);
+}
+
+function changeDmsTablePage(delta){
+  const totalPages=Math.max(1,Math.ceil(filteredDmsRows.length/DMS_TABLE_PAGE_SIZE));
+  dmsTablePage=Math.min(totalPages,Math.max(1,dmsTablePage+delta));
+  renderDmsTable();
+}
+
+function renderDmsTable(){
+  const tbody=document.querySelector('#dmsTable tbody');
+  const totalPages=filteredDmsRows.length?Math.ceil(filteredDmsRows.length/DMS_TABLE_PAGE_SIZE):0;
+  dmsTablePage=Math.min(Math.max(1,dmsTablePage),Math.max(1,totalPages));
+  document.getElementById('dmsPageStatus').textContent=totalPages?`Página ${dmsTablePage} de ${totalPages}`:'Página 0 de 0';
+  document.getElementById('dmsPagePrev').disabled=dmsTablePage<=1||!totalPages;
+  document.getElementById('dmsPageNext').disabled=dmsTablePage>=totalPages||!totalPages;
+  if(!filteredDmsRows.length){
+    tbody.innerHTML=`<tr><td colspan="6" class="empty-report">${dmsFiles.size?'No hay alarmas para los filtros seleccionados.':'Todavía no hay datos cargados.'}</td></tr>`;
+    return;
+  }
+  const start=(dmsTablePage-1)*DMS_TABLE_PAGE_SIZE;
+  tbody.innerHTML=filteredDmsRows.slice(start,start+DMS_TABLE_PAGE_SIZE).map(row=>{
+    const location=row.mapLat!==null&&row.mapLon!==null
+      ?`<a class="map-link" href="https://www.google.com/maps?q=${row.mapLat},${row.mapLon}" target="_blank" rel="noopener">${row.mapLat.toFixed(6)}, ${row.mapLon.toFixed(6)} ↗</a>`
+      :'Sin coordenadas';
+    const speed=Number.isFinite(row.speed)
+      ?`${row.speed.toFixed(1)} km/h${row.speedSource==='gps'?'<br><small>GPS cercano</small>':''}`
+      :'Sin velocidad';
+    const speedClass=row.severity==='Sin velocidad'?'dms-speed-none'
+      :row.severity==='Sin falta'?'dms-speed-sin-falta':`fault-${normalizeHeader(row.severity).replace(/\s/g,'-')}`;
+    return `<tr>
+      <td>${escapeHTML(row.time)}</td>
+      <td><b>${escapeHTML(row.truck)}</b></td>
+      <td><span class="dms-alarm-badge">${escapeHTML(row.type)}</span></td>
+      <td><span class="dms-speed-badge ${speedClass}">${speed}</span></td>
+      <td><b>${row.condition==='empty'?'Vacío':'Cargado'}</b><br><span class="dms-condition">${escapeHTML(row.severity)}</span></td>
+      <td>${location}</td>
+    </tr>`;
+  }).join('');
 }
 
 function renderDmsReport(rebuildOptions=true){
@@ -2361,30 +2414,7 @@ function renderDmsReport(rebuildOptions=true){
   renderDmsScoreChart();
   rebuildDmsMapFilterOptions();
   renderDmsMap();
-
-  const tbody=document.querySelector('#dmsTable tbody');
-  if(!filteredDmsRows.length){
-    tbody.innerHTML=`<tr><td colspan="6" class="empty-report">${dmsFiles.size?'No hay alarmas para los filtros seleccionados.':'Todavía no hay datos cargados.'}</td></tr>`;
-    return;
-  }
-  tbody.innerHTML=filteredDmsRows.map(row=>{
-    const location=row.mapLat!==null&&row.mapLon!==null
-      ?`<a class="map-link" href="https://www.google.com/maps?q=${row.mapLat},${row.mapLon}" target="_blank" rel="noopener">${row.mapLat.toFixed(6)}, ${row.mapLon.toFixed(6)} ↗</a>`
-      :'Sin coordenadas';
-    const speed=Number.isFinite(row.speed)
-      ?`${row.speed.toFixed(1)} km/h${row.speedSource==='gps'?'<br><small>GPS cercano</small>':''}`
-      :'Sin velocidad';
-    const speedClass=row.severity==='Sin velocidad'?'dms-speed-none'
-      :row.severity==='Sin falta'?'dms-speed-sin-falta':`fault-${normalizeHeader(row.severity).replace(/\s/g,'-')}`;
-    return `<tr>
-      <td>${escapeHTML(row.time)}</td>
-      <td><b>${escapeHTML(row.truck)}</b></td>
-      <td><span class="dms-alarm-badge">${escapeHTML(row.type)}</span></td>
-      <td><span class="dms-speed-badge ${speedClass}">${speed}</span></td>
-      <td><b>${row.condition==='empty'?'Vacío':'Cargado'}</b><br><span class="dms-condition">${escapeHTML(row.severity)}</span></td>
-      <td>${location}</td>
-    </tr>`;
-  }).join('');
+  renderDmsTable();
 }
 
 document.addEventListener('click',event=>{
