@@ -195,6 +195,9 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
 .dms-map-panel{background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden}
 .dms-map-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 14px;border-bottom:1px solid #30363d}
 .dms-map-head h2{font-size:14px;color:#f0f6fc;margin-bottom:3px}.dms-map-head p,.dms-map-status{font-size:10px;color:#8b949e}
+.dms-map-filters{display:grid;grid-template-columns:repeat(4,minmax(140px,1fr)) auto;gap:8px;align-items:end;padding:10px 14px;background:#0d1117;border-bottom:1px solid #30363d}
+.dms-map-filters .filter-field label{font-size:9px}.dms-map-filters button{font-size:10px}
+.dms-map-filters .multi-filter-menu{z-index:1300}
 #dmsMap{height:430px;background:#0d1117}
 .dms-map-legend{display:flex;gap:12px;flex-wrap:wrap;padding:9px 14px;border-top:1px solid #30363d;color:#8b949e;font-size:10px}
 .dms-map-legend span{display:flex;align-items:center;gap:5px}.dms-map-dot{width:9px;height:9px;border-radius:50%;display:inline-block}
@@ -206,6 +209,7 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
   .route-share-card.sin-falta{grid-column:1/-1}
   .dms-donut-layout{grid-template-columns:1fr}
   .dms-weight-groups{grid-template-columns:1fr}.dms-score-row{grid-template-columns:72px minmax(100px,1fr) 55px}
+  .dms-map-filters{grid-template-columns:1fr 1fr}.dms-map-filters>button{grid-column:1/-1}
   #dmsMap{height:340px}
   .truck-card{grid-template-columns:minmax(0,1fr) auto}.remove-file{grid-column:2}.condition-select{grid-column:2;grid-row:1}
   #vehicleSummary{gap:10px;padding:9px 12px}.vehicle-summary-item{width:100%;justify-content:space-between}
@@ -544,6 +548,37 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
       <div class="dms-map-head">
         <div><h2>Mapa de alertas DMS</h2><p>Color según velocidad y condición cargado/vacío de cada día</p></div>
         <span class="dms-map-status" id="dmsMapStatus">Sin alertas para mostrar</span>
+      </div>
+      <div class="dms-map-filters">
+        <div class="filter-field">
+          <label>Fechas del mapa</label>
+          <div class="multi-filter" id="dmsMapDayMultiFilter">
+            <button type="button" class="multi-filter-button" id="dmsMapDayMultiButton" onclick="toggleDmsMapFilter('day',event)">Todas las fechas</button>
+            <div class="multi-filter-menu" id="dmsMapDayMultiOptions"></div>
+          </div>
+        </div>
+        <div class="filter-field">
+          <label>Camiones del mapa</label>
+          <div class="multi-filter" id="dmsMapTruckMultiFilter">
+            <button type="button" class="multi-filter-button" id="dmsMapTruckMultiButton" onclick="toggleDmsMapFilter('truck',event)">Todos los camiones</button>
+            <div class="multi-filter-menu" id="dmsMapTruckMultiOptions"></div>
+          </div>
+        </div>
+        <div class="filter-field">
+          <label>Tipos de alerta</label>
+          <div class="multi-filter" id="dmsMapTypeMultiFilter">
+            <button type="button" class="multi-filter-button" id="dmsMapTypeMultiButton" onclick="toggleDmsMapFilter('type',event)">Todas las alertas</button>
+            <div class="multi-filter-menu" id="dmsMapTypeMultiOptions"></div>
+          </div>
+        </div>
+        <div class="filter-field">
+          <label>Tipo de velocidad</label>
+          <div class="multi-filter" id="dmsMapSeverityMultiFilter">
+            <button type="button" class="multi-filter-button" id="dmsMapSeverityMultiButton" onclick="toggleDmsMapFilter('severity',event)">Todas las velocidades</button>
+            <div class="multi-filter-menu" id="dmsMapSeverityMultiOptions"></div>
+          </div>
+        </div>
+        <button type="button" onclick="clearDmsMapFilters()">Limpiar mapa</button>
       </div>
       <div id="dmsMap"></div>
       <div class="dms-map-legend">
@@ -1693,6 +1728,7 @@ function exportInfractions(){
 const dmsFiles=new Map();
 let filteredDmsRows=[];
 const dmsSelections={day:new Set(),truck:new Set(),type:new Set()};
+const dmsMapSelections={day:new Set(),truck:new Set(),type:new Set(),severity:new Set()};
 const dmsSort={direction:'desc'};
 const dmsFilterLabels={
   day:{all:'Todos los días',plural:'días'},
@@ -1700,6 +1736,12 @@ const dmsFilterLabels={
   type:{all:'Todas las faltas',plural:'tipos'}
 };
 const dmsChartColors=['#58a6ff','#d2a8ff','#f97316','#3fb950','#f85149','#eab308','#39c5cf','#ec6cb9','#8b949e','#a5d6ff'];
+const dmsMapFilterLabels={
+  day:{all:'Todas las fechas',plural:'fechas'},
+  truck:{all:'Todos los camiones',plural:'camiones'},
+  type:{all:'Todas las alertas',plural:'alertas'},
+  severity:{all:'Todas las velocidades',plural:'categorías'}
+};
 const DMS_WEIGHT_STORAGE_KEY='vialtec-dms-weighting-v1';
 const DMS_SEVERITIES=['Sin falta','Leve','Media','Grave','Gravísima','Sin velocidad'];
 const DMS_SEVERITY_COLORS={'Sin falta':'#22c55e','Leve':'#eab308','Media':'#f97316','Grave':'#ef4444','Gravísima':'#d946ef','Sin velocidad':'#8b949e'};
@@ -1707,6 +1749,8 @@ const DMS_DEFAULT_MULTIPLIERS={'Sin falta':1,'Leve':1.25,'Media':1.5,'Grave':2,'
 let dmsMap=null;
 let dmsMapLayer=null;
 let dmsLastBounds=[];
+let dmsLastFitKey='';
+let dmsGpsIndexCache={key:'',index:new Map()};
 let dmsWeights=loadDmsWeights();
 
 function parseDmsPosition(value){
@@ -1906,6 +1950,11 @@ function dmsTimeToMillis(sortDate){
 }
 
 function buildDmsGpsIndex(){
+  const cacheKey=Object.entries(datasets).sort(([a],[b])=>a.localeCompare(b)).map(([fileName,points])=>{
+    const first=points[0],last=points[points.length-1];
+    return `${fileName}:${points.length}:${normalizeHeader(getDatasetTruck(fileName))}:${first?.time||''}:${last?.time||''}`;
+  }).join('|');
+  if(dmsGpsIndexCache.key===cacheKey)return dmsGpsIndexCache.index;
   const index=new Map();
   Object.entries(datasets).forEach(([fileName,points])=>{
     points.forEach(point=>{
@@ -1917,6 +1966,7 @@ function buildDmsGpsIndex(){
     });
   });
   index.forEach(points=>points.sort((a,b)=>a.ts-b.ts));
+  dmsGpsIndexCache={key:cacheKey,index};
   return index;
 }
 
@@ -1935,7 +1985,8 @@ function findNearestDmsGpsPoint(row,gpsIndex){
 }
 
 function enrichDmsRows(rows){
-  const gpsIndex=buildDmsGpsIndex();
+  const needsGps=rows.some(row=>!Number.isFinite(row.directSpeed)||row.lat===null||row.lon===null);
+  const gpsIndex=needsGps?buildDmsGpsIndex():new Map();
   return rows.map(row=>{
     const gpsPoint=findNearestDmsGpsPoint(row,gpsIndex);
     const speed=Number.isFinite(row.directSpeed)?row.directSpeed
@@ -2157,6 +2208,83 @@ function renderDmsScoreChart(){
   }).join('');
 }
 
+function toggleDmsMapFilter(kind,event){
+  event.stopPropagation();
+  const prefix=kind[0].toUpperCase()+kind.slice(1);
+  const target=document.getElementById(`dmsMap${prefix}MultiFilter`);
+  const willOpen=!target.classList.contains('open');
+  document.querySelectorAll('.multi-filter').forEach(filter=>filter.classList.remove('open'));
+  if(willOpen)target.classList.add('open');
+}
+
+function selectDmsMapOption(kind,value,checked){
+  const selected=dmsMapSelections[kind];
+  if(value==='__all__')selected.clear();
+  else if(checked)selected.add(value);
+  else selected.delete(value);
+  rebuildDmsMapFilterOptions();
+  renderDmsMap();
+}
+
+function renderDmsMapMultiOptions(kind,values){
+  const prefix=kind[0].toUpperCase()+kind.slice(1);
+  const selected=dmsMapSelections[kind];
+  const container=document.getElementById(`dmsMap${prefix}MultiOptions`);
+  container.innerHTML=`
+    <label class="multi-option multi-option-all">
+      <input type="checkbox" ${selected.size===0?'checked':''} data-value="__all__"> ${dmsMapFilterLabels[kind].all}
+    </label>
+    ${values.map(value=>`
+      <label class="multi-option">
+        <input type="checkbox" ${selected.has(value)?'checked':''} data-value="${escapeHTML(value)}">
+        ${kind==='severity'?`<i class="dms-map-dot" style="background:${DMS_SEVERITY_COLORS[value]||'#8b949e'}"></i>`:''}
+        ${escapeHTML(value)}
+      </label>`).join('')}`;
+  container.querySelectorAll('input').forEach(input=>{
+    input.addEventListener('change',event=>{
+      event.stopPropagation();
+      selectDmsMapOption(kind,input.dataset.value,input.checked);
+    });
+  });
+  const button=document.getElementById(`dmsMap${prefix}MultiButton`);
+  button.textContent=selected.size===0
+    ?dmsMapFilterLabels[kind].all
+    :selected.size===1?[...selected][0]:`${selected.size} ${dmsMapFilterLabels[kind].plural}`;
+  button.title=selected.size?[...selected].join(', '):dmsMapFilterLabels[kind].all;
+}
+
+function rebuildDmsMapFilterOptions(){
+  const values={
+    day:[...new Set(filteredDmsRows.map(row=>row.day))].sort((a,b)=>dateParts(a).sort.localeCompare(dateParts(b).sort)),
+    truck:[...new Set(filteredDmsRows.map(row=>row.truck))].sort((a,b)=>a.localeCompare(b)),
+    type:[...new Set(filteredDmsRows.map(row=>row.type))].sort((a,b)=>a.localeCompare(b)),
+    severity:DMS_SEVERITIES.filter(severity=>filteredDmsRows.some(row=>row.severity===severity))
+  };
+  Object.entries(values).forEach(([kind,options])=>{
+    const valid=new Set(options);
+    [...dmsMapSelections[kind]].forEach(value=>{
+      if(!valid.has(value))dmsMapSelections[kind].delete(value);
+    });
+    renderDmsMapMultiOptions(kind,options);
+  });
+}
+
+function clearDmsMapFilters(){
+  Object.values(dmsMapSelections).forEach(selection=>selection.clear());
+  rebuildDmsMapFilterOptions();
+  renderDmsMap();
+}
+
+function getFilteredDmsMapRows(){
+  const {day,truck,type,severity}=dmsMapSelections;
+  return filteredDmsRows.filter(row=>
+    (!day.size||day.has(row.day))
+    &&(!truck.size||truck.has(row.truck))
+    &&(!type.size||type.has(row.type))
+    &&(!severity.size||severity.has(row.severity))
+  );
+}
+
 function ensureDmsMap(){
   if(dmsMap)return;
   dmsMap=L.map('dmsMap',{center:[-23.42,-68.67],zoom:7,zoomControl:true,preferCanvas:true});
@@ -2175,8 +2303,10 @@ function renderDmsMap(){
   ensureDmsMap();
   dmsMapLayer.clearLayers();
   dmsLastBounds=[];
+  const mapRows=getFilteredDmsMapRows();
+  const fitKey=mapRows.map(row=>row.id).join('|');
   let mapped=0;
-  filteredDmsRows.forEach(row=>{
+  mapRows.forEach(row=>{
     if(!Number.isFinite(row.mapLat)||!Number.isFinite(row.mapLon))return;
     const color=DMS_SEVERITY_COLORS[row.severity]||DMS_SEVERITY_COLORS['Sin velocidad'];
     const speedText=Number.isFinite(row.speed)
@@ -2197,11 +2327,14 @@ function renderDmsMap(){
     mapped++;
   });
   document.getElementById('dmsMapStatus').textContent=mapped
-    ?`${mapped.toLocaleString()} alerta${mapped===1?'':'s'} ubicadas`
-    :filteredDmsRows.length?'Las alertas visibles no tienen coordenadas':'Sin alertas para mostrar';
+    ?`${mapped.toLocaleString()} de ${filteredDmsRows.length.toLocaleString()} alerta${filteredDmsRows.length===1?'':'s'} ubicadas`
+    :mapRows.length?'Las alertas seleccionadas no tienen coordenadas':'Sin alertas para mostrar';
   setTimeout(()=>{
     dmsMap.invalidateSize();
-    fitDmsMap();
+    if(fitKey!==dmsLastFitKey){
+      dmsLastFitKey=fitKey;
+      fitDmsMap();
+    }
   },50);
 }
 
@@ -2226,6 +2359,7 @@ function renderDmsReport(rebuildOptions=true){
   renderDmsTruckChart();
   renderDmsDonut();
   renderDmsScoreChart();
+  rebuildDmsMapFilterOptions();
   renderDmsMap();
 
   const tbody=document.querySelector('#dmsTable tbody');
