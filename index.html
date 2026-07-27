@@ -418,7 +418,7 @@ label.upload-btn{display:inline-flex;align-items:center;gap:5px}
         <p>Analizá alarmas de conducción, combiná filtros y abrí cada evento directamente en el mapa.</p>
       </div>
       <div class="rules-note">
-        Campos reconocidos: <b>camión, tipo de alarma, hora, posición y velocidad</b>. Si falta velocidad, se busca el GPS más cercano.
+        Campos reconocidos: <b>camión, tipo de alarma, hora, posición y velocidad</b>. Las falsas alarmas marcadas como error se excluyen automáticamente.
       </div>
     </div>
 
@@ -1718,11 +1718,17 @@ function parseDmsPosition(value){
   return {lat,lon};
 }
 
+function isDmsFalseAlarm(value){
+  const status=normalizeHeader(value);
+  return /alarma de error|error de alarma|falsa alarma|alarma falsa|false alarm|invalid alarm/.test(status);
+}
+
 async function parseDmsXLS(file){
   if(!window.XLSX)throw new Error('El lector de Excel todavía está cargando. Intentá nuevamente en unos segundos.');
   const buffer=await file.arrayBuffer();
   const workbook=XLSX.read(buffer,{type:'array',cellDates:true});
   const rows=[];
+  let excludedFalseAlarms=0;
   workbook.SheetNames.forEach(sheetName=>{
     const raw=XLSX.utils.sheet_to_json(workbook.Sheets[sheetName],{header:1,defval:'',raw:true});
     const headerIndex=raw.findIndex(row=>{
@@ -1738,10 +1744,18 @@ async function parseDmsXLS(file){
     const timeIndex=findColumn(headers,['hora de inicio','fecha y hora','tiempo de reportar']);
     const positionIndex=findColumn(headers,['posicion de empezar','posicion de inicio','ubicacion','posicion de terminar']);
     const speedIndex=findColumn(headers,['velocidad','speed','velocidad km h','velocidad de inicio']);
+    const validationIndex=findColumn(headers,['alarma de error o no','estado de alarma','validacion de alarma','alarma falsa','falsa alarma']);
+    const cloudReviewIndex=findColumn(headers,['resultados de la revision de la nube de dms','resultado de revision dms']);
     raw.slice(headerIndex+1).forEach((row,rowIndex)=>{
       const type=String(typeIndex>=0?row[typeIndex]:'').trim();
       const time=excelDateToText(timeIndex>=0?row[timeIndex]:'');
       if(!type||!time)return;
+      const validation=validationIndex>=0?row[validationIndex]:'';
+      const cloudReview=cloudReviewIndex>=0?row[cloudReviewIndex]:'';
+      if(isDmsFalseAlarm(validation)||isDmsFalseAlarm(cloudReview)){
+        excludedFalseAlarms++;
+        return;
+      }
       const date=dateParts(time);
       const position=parseDmsPosition(positionIndex>=0?row[positionIndex]:'');
       const parsedSpeed=parseSpeedValue(speedIndex>=0?row[speedIndex]:'');
@@ -1757,6 +1771,7 @@ async function parseDmsXLS(file){
     });
   });
   if(!rows.length)throw new Error('No se encontraron filas con Tipo de alarma y Hora de inicio.');
+  rows.excludedFalseAlarms=excludedFalseAlarms;
   return rows;
 }
 
@@ -1767,7 +1782,7 @@ document.getElementById('dmsFileInput').addEventListener('change',async function
     try{
       const rows=await parseDmsXLS(file);
       const key=`${file.name}-${file.size}-${file.lastModified}`;
-      dmsFiles.set(key,{key,fileName:file.name,rows});
+      dmsFiles.set(key,{key,fileName:file.name,rows,excludedFalseAlarms:rows.excludedFalseAlarms||0});
       loaded++;
     }catch(error){
       alert(`${file.name}: ${error.message||error}`);
@@ -1788,7 +1803,10 @@ function renderDmsFileList(){
   dmsFiles.forEach(entry=>{
     const chip=document.createElement('div');
     chip.className='dms-file-chip';
-    chip.innerHTML=`<b>${escapeHTML(entry.fileName)}</b><span>${entry.rows.length.toLocaleString()} alarmas</span><button title="Quitar archivo" aria-label="Quitar ${escapeHTML(entry.fileName)}">✕</button>`;
+    const excludedText=entry.excludedFalseAlarms
+      ?` · ${entry.excludedFalseAlarms.toLocaleString()} falsa${entry.excludedFalseAlarms===1?'':'s'} excluida${entry.excludedFalseAlarms===1?'':'s'}`
+      :'';
+    chip.innerHTML=`<b>${escapeHTML(entry.fileName)}</b><span>${entry.rows.length.toLocaleString()} alarmas válidas${excludedText}</span><button title="Quitar archivo" aria-label="Quitar ${escapeHTML(entry.fileName)}">✕</button>`;
     chip.querySelector('button').addEventListener('click',()=>{
       dmsFiles.delete(entry.key);
       renderDmsFileList();
